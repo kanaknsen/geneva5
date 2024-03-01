@@ -113,6 +113,36 @@ class Trigger(object):
 
         return will_run
 
+    def dump_tree(break_probs, layer, start, end , text, threshold=0.8):
+        layer_probs = break_probs[layer,start:end]
+        min_layer = 2
+        tree = Tree.fromstring('()')
+        if end - start > 1:
+            point = np.argmin(layer_probs)
+            if layer_probs[point] > threshold:
+                if layer == min_layer:
+                    tree = word2tree(start, end+1, text)
+                    return tree
+                return dump_tree(break_probs, max(layer-1,min_layer), start, end, text, threshold)
+    
+            for span in (layer_probs[:point],layer_probs[point+1:]):
+                span_size = span.shape[0]
+                if span_size > 0:
+                    if np.min(span) > 0.7:
+                        node_tree = dump_tree(break_probs, max(layer-1,min_layer), start, start+span_size, text, threshold)
+                    else:
+                        node_tree = dump_tree(break_probs, layer, start, start+span_size, text, threshold)
+                    tree.insert(len(tree)+1,node_tree)
+                else:
+                    tree.insert(len(tree)+1,word2tree(start, start+1, text))
+                start += span_size + 1
+            return tree
+        elif end - start == 1:
+            return word2tree(start, start+2, text)
+        else:
+            return word2tree(start, start+1, text)
+
+    
     def __str__(self):
         """
         Returns a string representation of this trigger in the form:
@@ -178,13 +208,63 @@ class Trigger(object):
         value = m.group(3)
 
         # Parse out the given value if necessary
-        value = layers.packet.Packet.parse(proto, field, value)
+        #     value = layers.packet.Packet.parse(proto, field, value)
 
         # Trigger gas is set to None if it is disabled
-        trigger_gas = None
-        if has_gas:
-            trigger_gas = int(m.group(4))
+        #    trigger_gas = None
+        #    if has_gas:
+           #     trigger_gas = int(m.group(4))
 
+
+        current_gas = trigger_gas   
+
+        if has_gas:
+            trigger_gas = None
+            trigger_gas = init(m.group(4))
+            trigger_gas = current_gas
+        else
+            trigger_gas = None
+
+       
+    
         # Define the new trigger with these parameters
         t = Trigger(trigger_type, field, proto, value, gas=trigger_gas)
         return t
+
+ def build_tree(break_probs, layer, start, end ,threshold=0.8):
+    brackets = set()
+    layer_probs = break_probs[layer,start:end]
+    min_layer = 2
+    if end - start > 1:
+        point = np.argmin(layer_probs)
+        #print(layer, start, end)
+        if layer_probs[point] > threshold:
+            if layer == min_layer:
+                brackets.add((start,end+1))
+                return brackets
+            return build_tree(break_probs, max(layer-1,min_layer), start, end, threshold)
+    
+        for span in (layer_probs[:point],layer_probs[point+1:]):
+            span_size = span.shape[0]
+            if span_size > 0:
+                if np.min(span) > 0.7:
+                    node_brac = build_tree(break_probs, max(layer-1,min_layer), start, start+span_size, threshold)
+                else:
+                    node_brac = build_tree(break_probs, layer, start, start+span_size)
+                brackets.add((start, start+span_size+1))
+                brackets.update(node_brac)
+            start += span_size + 1
+        return brackets
+
+    else:
+        brackets.add((start,start+2))
+        return brackets
+
+def word2tree(start, end, text):
+    tree = '( '
+    for idx in range(start, end):
+        s = '( %s) ' % (text[idx])
+        tree = tree + s
+    tree = tree + ')'
+    return Tree.fromstring(tree)
+

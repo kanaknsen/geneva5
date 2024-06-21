@@ -106,6 +106,54 @@ def parse(requested_trees, logger):
     return strat
 
 
+  def handle_outbound_packet(self, divert_packet):
+        """
+        Handles outbound packets by sending them the the strategy
+        """
+        packet = actions.packet.Packet(IP(divert_packet.raw.tobytes()))
+        self.logger.debug("Received outbound packet %s", str(packet))
+
+        # Record this packet for a .pcap later
+        self.seen_packets.append(packet)
+
+        packets_to_send = self.strategy.act_on_packet(packet, self.logger, direction="out")
+
+        # Send all of the packets we've collected to send
+        for out_packet in packets_to_send:
+            self.mysend(out_packet, Direction.OUTBOUND)        
+
+    def handle_inbound_packet(self, divert_packet):
+        """
+        Handles inbound packets. Process the packet and forward it to the strategy if needed.
+        """
+
+        packet = actions.packet.Packet(IP(divert_packet.raw.tobytes()))
+
+        self.seen_packets.append(packet)
+
+        self.logger.debug("Received packet: %s", str(packet))
+
+        # Run the given strategy
+        packets = self.strategy.act_on_packet(packet, self.logger, direction="in")
+
+        # GFW will send RA packets to disrupt a TCP stream
+        if packet.haslayer("TCP") and packet.get("TCP", "flags") == "RA":
+            self.logger.debug("Detected GFW censorship - strategy failed.")
+            self.censorship_detected = True
+
+        # Branching is disabled for the in direction, so we can only ever get
+        # back 1 or 0 packets. If zero, return and do not send packet. 
+        if not packets:
+            return
+
+        # If the strategy requested us to sleep before accepting on this packet, do so here
+        if packets[0].sleep:
+            time.sleep(packets[0].sleep)
+
+        # Accept the modified packet
+        self.mysend(packets[0], Direction.INBOUND)
+
+
 
 def get_logger(basepath, log_dir, logger_name, log_name, environment_id, log_level="DEBUG", file_log_level="DEBUG", demo_mode=False):
     """

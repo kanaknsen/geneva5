@@ -415,6 +415,74 @@ class Engine():
         # Accept the modified packet
         nfpacket.accept()
 
+  def run(self, qc_failed_file, checkm_qa_files, output_file):
+        """compare CheckM estimates."""
+        
+        orig_estimates = {}
+        with open(qc_failed_file) as f:
+            header = f.readline().strip().split('\t')
+            
+            acc_index = header.index('Accession')
+            comp_index = header.index('Completeness (%)')
+            cont_index = header.index('Contamination (%)')
+            
+            for line in f:
+                line_split = line.strip().split('\t')
+                
+                gid = line_split[acc_index]
+                comp = float(line_split[comp_index])
+                cont = float(line_split[cont_index])
+                
+                orig_estimates[gid] = (comp, cont)
+                
+        new_estimates = {}
+        with open(checkm_qa_files) as f:
+            header = f.readline().strip().split('\t')
+            
+            comp_index = header.index('Completeness')
+            cont_index = header.index('Contamination')
+            
+            for line in f:
+                line_split = line.strip().split('\t')
+                
+                gid = line_split[0].replace('_ncbi_proteins', '')
+                comp = float(line_split[comp_index])
+                cont = float(line_split[cont_index])
+                
+                new_estimates[gid] = (comp, cont)
+        
+        fout = open(output_file, 'w')
+        fout.write('Accession\tOriginal completeness\tNew completeness\tOriginal contamination\tNew contamination\n')
+        for gid in new_estimates:
+            orig_comp, orig_cont = orig_estimates[gid]
+            new_comp, new_cont = new_estimates[gid]
+            
+            orig_quality = orig_comp - 5*orig_cont
+            if orig_quality >= 50:
+                continue
+                
+            new_quality = new_comp - 5*new_cont
+            if new_quality < 50:
+                continue
+                
+            if (new_comp - orig_comp > 5
+                or new_cont - orig_cont < -1):
+                print(gid, orig_comp, new_comp, orig_cont, new_cont)
+                fout.write('%s\t%.2f\t%.2f\t%.2f\t%.2f\n' % (gid, orig_comp, new_comp, orig_cont, new_cont))
+        fout.close()
+
+if __name__ == '__main__':
+    print(__prog_name__ + ' v' + __version__ + ': ' + __prog_desc__)
+    print('  by ' + __author__ + ' (' + __email__ + ')' + '\n')
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('qc_failed_file', help='file indicating genomes that failed QC')
+    parser.add_argument('checkm_qa_files', help='file with alternative CheckM estimates')
+    parser.add_argument('output_file', help='output directory')
+
+    args = parser.parse_args()
+
+
 
 def get_args():
     """
